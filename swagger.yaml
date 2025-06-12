@@ -1,0 +1,410 @@
+openapi: 3.0.0
+info:
+  title: Aloux File Converter API
+  description: API para la conversión de archivos entre diferentes formatos
+  version: 1.0.0
+  contact:
+    name: Aloux
+
+servers:
+  - url: http://localhost:2018/api
+    description: Servidor de desarrollo
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        status:
+          type: string
+          enum: [Activo, Inactivo]
+        createdAt:
+          type: number
+        lastUpdate:
+          type: number
+        _functions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              _v:
+                type: number
+        _business:
+          type: array
+          items:
+            type: object
+        _client:
+          type: array
+          items:
+            type: object
+        validateKey:
+          type: object
+        data:
+          type: object
+        tokens:
+          type: array
+          items:
+            type: string
+
+    Conversion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user:
+          type: string
+          format: uuid
+        originalFileName:
+          type: string
+        convertedFileName:
+          type: string
+        sourceFormat:
+          type: string
+          enum: [json, csv, xlsx, xml, yaml]
+        targetFormat:
+          type: string
+          enum: [json, csv, xlsx, xml, yaml]
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Autenticación
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                pwd:
+                  type: string
+              required:
+                - email
+                - pwd
+      responses:
+        '200':
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/users:
+    post:
+      tags:
+        - Usuarios
+      summary: Crear nuevo usuario
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                pwd:
+                  type: string
+              required:
+                - name
+                - lastName
+                - email
+                - phone
+                - pwd
+      responses:
+        '201':
+          description: Usuario creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users:
+    get:
+      tags:
+        - Usuarios
+      summary: Obtener todos los usuarios
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+  /users/{id}:
+    get:
+      tags:
+        - Usuarios
+      summary: Obtener usuario específico
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Usuario encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: Usuario no encontrado
+
+    delete:
+      tags:
+        - Usuarios
+      summary: Eliminar usuario
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Usuario eliminado exitosamente
+        '404':
+          description: Usuario no encontrado
+
+  /users/{id}/role:
+    patch:
+      tags:
+        - Usuarios
+      summary: Actualizar rol de usuario
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [admin, user]
+              required:
+                - role
+      responses:
+        '200':
+          description: Rol actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: Usuario no encontrado
+
+  /convert:
+    post:
+      tags:
+        - Conversión
+      summary: Convertir archivo
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                sourceFormat:
+                  type: string
+                  enum: [json, csv, xlsx, xml, yaml]
+                targetFormat:
+                  type: string
+                  enum: [json, csv, xlsx, xml, yaml]
+              required:
+                - file
+                - sourceFormat
+                - targetFormat
+      responses:
+        '200':
+          description: Conversión iniciada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  conversionId:
+                    type: string
+                  status:
+                    type: string
+
+  /convert/status/{id}:
+    get:
+      tags:
+        - Conversión
+      summary: Obtener estado de conversión
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado de la conversión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversion'
+        '404':
+          description: Conversión no encontrada
+
+  /convert/download/{id}:
+    get:
+      tags:
+        - Conversión
+      summary: Descargar archivo convertido
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Archivo convertido
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Archivo no encontrado
+
+  /history:
+    get:
+      tags:
+        - Historial
+      summary: Obtener historial de conversiones del usuario
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Historial de conversiones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversion'
+
+  /history/all:
+    get:
+      tags:
+        - Historial
+      summary: Obtener todos los historiales (admin)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Todos los historiales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversion' 

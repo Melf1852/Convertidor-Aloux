@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const IAMAuth = require('../middleware/authMiddleware');
 const { User } = require('aloux-iam');
 
 // Obtener todos los usuarios (solo admin)
-router.get('/', IAMAuth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const users = await User.find({}, '-pwd');
     res.json(users);
@@ -14,7 +13,7 @@ router.get('/', IAMAuth, async (req, res) => {
 });
 
 // Obtener un usuario específico (solo admin)
-router.get('/:id', IAMAuth, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id, '-pwd');
     if (!user) {
@@ -27,7 +26,7 @@ router.get('/:id', IAMAuth, async (req, res) => {
 });
 
 // Actualizar rol de usuario (solo admin)
-router.patch('/:id/role', IAMAuth, async (req, res) => {
+router.patch('/:id/role', async (req, res) => {
   try {
     const { role } = req.body;
     if (!['admin', 'user'].includes(role)) {
@@ -51,7 +50,7 @@ router.patch('/:id/role', IAMAuth, async (req, res) => {
 });
 
 // Eliminar usuario (solo admin)
-router.delete('/:id', IAMAuth, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {

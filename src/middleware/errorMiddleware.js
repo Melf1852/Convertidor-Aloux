@@ -1,10 +1,15 @@
 const errorHandler = (err, req, res, next) => {
-  console.error(err.stack);
+  // Manejar errores de IAM
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      message: 'Token no válido o expirado'
+    });
+  }
 
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       message: 'Error de validación',
-      errors: Object.values(err.errors).map(e => e.message)
+      errors: Object.values(err.errors).map(error => error.message)
     });
   }
 
@@ -21,9 +26,10 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  res.status(500).json({
-    message: 'Error interno del servidor',
-    error: process.env.DEBUG === 'true' ? err.message : 'Algo salió mal'
+  // Error por defecto
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    message: err.message || 'Error interno del servidor'
   });
 };
 

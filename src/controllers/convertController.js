@@ -5,6 +5,7 @@ const xlsx = require('xlsx');
 const { parse } = require('csv-parse');
 const { stringify } = require('csv-stringify');
 const Conversion = require('../models/conversionModel');
+const jwt = require('jsonwebtoken');
 
 let io;
 // Función para configurar el socket.io
@@ -29,6 +30,17 @@ const convertFile = async (req, res) => {
       return res.status(400).json({ message: 'No se proporcionó ningún archivo' });
     }
 
+    const token = req.headers.authorization;
+    if (!token) {
+      return res.status(401).json({ message: 'No se proporcionó el token de autorización' });
+    }
+
+    const tokenLimpio = token.startsWith('Bearer ') ? token.slice(7) : token;
+    
+    // Decodificar el token para obtener el ID del usuario
+    const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
+    const userId = decodedToken._id; // Aquí obtenemos el ID del usuario
+
     const { sourceFormat, targetFormat } = req.body;
     const originalFileName = req.file.filename;
     const filePath = req.file.path;
@@ -37,7 +49,7 @@ const convertFile = async (req, res) => {
 
     // Crear registro de conversión
     const conversion = new Conversion({
-      user: req.user._id,
+      user: userId, // Ahora usamos el ID del usuario en lugar del token
       originalFileName,
       convertedFileName,
       sourceFormat,
@@ -203,4 +215,4 @@ module.exports = {
   getConversionStatus,
   downloadConvertedFile,
   setIO
-}; 
+};

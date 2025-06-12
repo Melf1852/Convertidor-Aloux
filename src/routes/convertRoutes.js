@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const IAMAuth = require('../middleware/authMiddleware');
 const { convertFile, getConversionStatus, downloadConvertedFile } = require('../controllers/convertController');
 
 // Configuración de multer para subida de archivos
@@ -32,8 +31,8 @@ const upload = multer({
 });
 
 // Rutas protegidas
-router.post('/', IAMAuth, upload.single('file'), convertFile);
-router.get('/status/:id', IAMAuth, getConversionStatus);
-router.get('/download/:id', IAMAuth, downloadConvertedFile);
+router.post('/', upload.single('file'), convertFile);
+router.get('/status/:id', getConversionStatus);
+router.get('/download/:id', downloadConvertedFile);
 
 module.exports = router;

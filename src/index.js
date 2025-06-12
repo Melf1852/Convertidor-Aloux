@@ -8,6 +8,7 @@ const swaggerUI = require('swagger-ui-express');
 const YAML = require('yamljs');
 const path = require('path');
 const { IAMRouter, IAMSwagger, IAMAuth } = require('aloux-iam');
+const { cleanupUploads } = require('./utils/cleanup');
 
 const convertRoutes = require('./routes/convertRoutes');
 const historyRoutes = require('./routes/historyRoutes');
@@ -41,16 +42,16 @@ app.use(
   "/aloux-iam",
   swaggerUI.serveFiles(IAMSwagger, {}), 
   swaggerUI.setup(IAMSwagger)
-  )
+);
 
 // Cargar y servir la documentación Swagger del convertidor
 const swaggerDocument = YAML.load(path.join(__dirname, '..', 'swagger.yaml'));
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocument));
 
 // Rutas del convertidor (protegidas con IAM)
-app.use('/api/convert', IAMAuth, convertRoutes);
-app.use('/api/history', IAMAuth, historyRoutes);
-app.use('/api/users', IAMAuth, userRoutes);
+app.use('/api/convert', convertRoutes);
+app.use('/api/history', historyRoutes);
+app.use('/api/users', userRoutes);
 
 // Middleware de manejo de errores
 app.use(errorHandler);
@@ -64,6 +65,9 @@ mongoose.connect(process.env.DB, {
 })
 .then(() => console.log('Conectado a MongoDB'))
 .catch(err => console.error('Error al conectar a MongoDB:', err));
+
+// Configurar limpieza periódica de archivos temporales (cada hora)
+setInterval(cleanupUploads, 60 * 60 * 1000);
 
 // WebSocket events
 io.on('connection', (socket) => {

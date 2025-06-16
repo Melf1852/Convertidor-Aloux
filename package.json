@@ -9,7 +9,7 @@
     "test": "env-cmd -f .env.test jest"
   },
   "dependencies": {
-    "aloux-iam": "^0.0.119",
+    "aloux-iam": "^0.0.118",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.0",

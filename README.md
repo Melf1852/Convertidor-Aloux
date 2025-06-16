@@ -20,7 +20,7 @@ Sistema web interno para la conversión de archivos entre diferentes formatos.
 
 1. Clonar el repositorio:
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/Melf1852/Convertidor-Aloux.git
 cd aloux-converter
 ```
 

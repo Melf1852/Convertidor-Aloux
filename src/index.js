@@ -9,7 +9,7 @@ const YAML = require('yamljs');
 const path = require('path');
 const { IAMRouter, IAMSwagger, IAMAuth } = require('aloux-iam');
 const { cleanupUploads } = require('./utils/cleanup');
-
+const methodOverride = require("method-override");
 const convertRoutes = require('./routes/convertRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -35,12 +35,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Rutas de IAM
+app.use(methodOverride());
 app.use(IAMRouter);
 
 // Documentación Swagger de IAM
 app.use(
   "/aloux-iam",
-  swaggerUI.serveFiles(IAMSwagger, {}), 
+  swaggerUI.serveFiles(IAMSwagger, {}),
   swaggerUI.setup(IAMSwagger)
 );
 
@@ -63,8 +64,8 @@ mongoose.connect(process.env.DB, {
   useFindAndModify: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('Conectado a MongoDB'))
-.catch(err => console.error('Error al conectar a MongoDB:', err));
+  .then(() => console.log('Conectado a MongoDB'))
+  .catch(err => console.error('Error al conectar a MongoDB:', err));
 
 // Configurar limpieza periódica de archivos temporales (cada hora)
 setInterval(cleanupUploads, 60 * 60 * 1000);
@@ -72,7 +73,7 @@ setInterval(cleanupUploads, 60 * 60 * 1000);
 // WebSocket events
 io.on('connection', (socket) => {
   console.log('Cliente conectado');
-  
+
   socket.on('disconnect', () => {
     console.log('Cliente desconectado');
   });

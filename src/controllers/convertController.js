@@ -4,11 +4,12 @@ const fsPromises = require('fs').promises;
 const xlsx = require('xlsx');
 const { parse } = require('csv-parse');
 const { stringify } = require('csv-stringify');
+const yaml = require('js-yaml');
+const xml2js = require('xml2js');
 const Conversion = require('../models/conversionModel');
 const jwt = require('jsonwebtoken');
 
 let io;
-// Función para configurar el socket.io
 const setIO = (socketIO) => {
   io = socketIO;
 };
@@ -36,10 +37,8 @@ const convertFile = async (req, res) => {
     }
 
     const tokenLimpio = token.startsWith('Bearer ') ? token.slice(7) : token;
-    
-    // Decodificar el token para obtener el ID del usuario
     const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
-    const userId = decodedToken._id; // Aquí obtenemos el ID del usuario
+    const userId = decodedToken._id;
 
     const { sourceFormat, targetFormat } = req.body;
     const originalFileName = req.file.filename;
@@ -47,9 +46,8 @@ const convertFile = async (req, res) => {
     const outputExtension = getOutputExtension(targetFormat);
     const convertedFileName = `converted_${path.parse(originalFileName).name}${outputExtension}`;
 
-    // Crear registro de conversión
     const conversion = new Conversion({
-      user: userId, // Ahora usamos el ID del usuario en lugar del token
+      user: userId,
       originalFileName,
       convertedFileName,
       sourceFormat,
@@ -60,10 +58,8 @@ const convertFile = async (req, res) => {
     await conversion.save();
 
     try {
-      // Procesar archivo
       await processFile(filePath, sourceFormat, targetFormat, conversion);
-      
-      // Actualizar estado a completado
+
       await Conversion.findByIdAndUpdate(conversion._id, {
         status: 'completed',
         completedAt: new Date()
@@ -76,14 +72,12 @@ const convertFile = async (req, res) => {
         });
       }
 
-      // Enviar respuesta con estado completado
       res.status(200).json({
         message: 'Conversión completada',
         conversionId: conversion._id,
         status: 'completed'
       });
     } catch (error) {
-      // Actualizar estado a fallido
       await Conversion.findByIdAndUpdate(conversion._id, {
         status: 'failed',
         error: error.message
@@ -101,9 +95,9 @@ const convertFile = async (req, res) => {
     }
   } catch (error) {
     console.error('Error en la conversión:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Error al procesar el archivo',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -111,72 +105,111 @@ const convertFile = async (req, res) => {
 const processFile = async (filePath, sourceFormat, targetFormat, conversion) => {
   let data;
 
-  try {
-    // Leer archivo según formato de origen
-    switch (sourceFormat) {
-      case 'json':
-        const jsonContent = await fsPromises.readFile(filePath, 'utf-8');
-        data = JSON.parse(jsonContent);
-        // Si data es un objeto con una propiedad que es un array, usar ese array
-        if (typeof data === 'object' && !Array.isArray(data)) {
-          const arrayProps = Object.keys(data).filter(key => Array.isArray(data[key]));
-          if (arrayProps.length > 0) {
-            data = data[arrayProps[0]];
-          }
+  // Leer archivo según formato de origen
+  switch (sourceFormat) {
+    case 'json':
+      const jsonContent = await fsPromises.readFile(filePath, 'utf-8');
+      data = JSON.parse(jsonContent);
+      if (typeof data === 'object' && !Array.isArray(data)) {
+        const arrayProps = Object.keys(data).filter(key => Array.isArray(data[key]));
+        if (arrayProps.length > 0) {
+          data = data[arrayProps[0]];
         }
-        break;
-      case 'csv':
-        data = await new Promise((resolve, reject) => {
-          const results = [];
-          fs.createReadStream(filePath)
-            .pipe(parse({ columns: true }))
-            .on('data', (data) => results.push(data))
-            .on('end', () => resolve(results))
-            .on('error', reject);
-        });
-        break;
-      case 'xlsx':
-        const workbook = xlsx.readFile(filePath);
-        data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        break;
-      default:
-        throw new Error('Formato de origen no soportado');
-    }
+      }
+      break;
 
-    // Convertir y guardar según formato de destino
-    const outputPath = path.join(path.dirname(filePath), conversion.convertedFileName);
-    
-    switch (targetFormat) {
-      case 'json':
-        await fsPromises.writeFile(outputPath, JSON.stringify(data, null, 2));
-        break;
-      case 'csv':
-        await new Promise((resolve, reject) => {
-          const writeStream = fs.createWriteStream(outputPath);
-          stringify(data, { 
-            header: true,
-            columns: data.length > 0 ? Object.keys(data[0]) : []
-          })
-            .pipe(writeStream)
-            .on('finish', resolve)
-            .on('error', reject);
-        });
-        break;
-      case 'xlsx':
-        const newWorkbook = xlsx.utils.book_new();
-        const newSheet = xlsx.utils.json_to_sheet(data);
-        xlsx.utils.book_append_sheet(newWorkbook, newSheet, 'Sheet1');
-        xlsx.writeFile(newWorkbook, outputPath);
-        break;
-      default:
-        throw new Error('Formato de destino no soportado');
-    }
+    case 'csv':
+      data = await new Promise((resolve, reject) => {
+        const results = [];
+        fs.createReadStream(filePath)
+          .pipe(parse({ columns: true }))
+          .on('data', row => results.push(row))
+          .on('end', () => resolve(results))
+          .on('error', reject);
+      });
+      break;
 
-    return outputPath;
-  } catch (error) {
-    console.error('Error en processFile:', error);
-    throw new Error(`Error al procesar el archivo: ${error.message}`);
+    case 'xlsx':
+      const workbook = xlsx.readFile(filePath);
+      data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      break;
+
+    case 'yaml':
+      const yamlContent = await fsPromises.readFile(filePath, 'utf-8');
+      data = yaml.load(yamlContent);
+      if (typeof data === 'object' && !Array.isArray(data)) {
+        const arrayProps = Object.keys(data).filter(key => Array.isArray(data[key]));
+        if (arrayProps.length > 0) {
+          data = data[arrayProps[0]];
+        }
+      }
+      break;
+
+    case 'xml':
+      const xmlContent = await fsPromises.readFile(filePath, 'utf-8');
+      data = await xml2js.parseStringPromise(xmlContent);
+      if (typeof data === 'object') {
+        const rootKey = Object.keys(data)[0];
+        data = data[rootKey];
+        const arrayProps = Object.keys(data).filter(key => Array.isArray(data[key]));
+        if (arrayProps.length > 0) {
+          data = data[arrayProps[0]];
+        } else {
+          data = [data]; // Asegurarse de devolver un array
+        }
+      }
+      break;
+
+    default:
+      throw new Error('Formato de origen no soportado');
   }
+
+  // Convertir y guardar según formato de destino
+  const outputPath = path.join(path.dirname(filePath), conversion.convertedFileName);
+
+  switch (targetFormat) {
+    case 'json':
+      await fsPromises.writeFile(outputPath, JSON.stringify(data, null, 2));
+      break;
+
+    case 'csv':
+      await new Promise((resolve, reject) => {
+        const writeStream = fs.createWriteStream(outputPath);
+        stringify(data, {
+          header: true,
+          columns: data.length > 0 ? Object.keys(data[0]) : []
+        })
+          .pipe(writeStream)
+          .on('finish', resolve)
+          .on('error', reject);
+      });
+      break;
+
+    case 'xlsx':
+      const newWorkbook = xlsx.utils.book_new();
+      const newSheet = xlsx.utils.json_to_sheet(data);
+      xlsx.utils.book_append_sheet(newWorkbook, newSheet, 'Sheet1');
+      xlsx.writeFile(newWorkbook, outputPath);
+      break;
+
+    case 'yaml':
+      await fsPromises.writeFile(outputPath, yaml.dump(data));
+      break;
+
+    case 'xml':
+      const builder = new xml2js.Builder();
+      const rootName = 'root';
+      const wrappedData = {};
+      wrappedData[rootName] = { record: data };
+      const xml = builder.buildObject(wrappedData);
+      await fsPromises.writeFile(outputPath, xml);
+      break;
+
+    default:
+      throw new Error('Formato de destino no soportado');
+  }
+
+  return outputPath;
 };
 
 const getConversionStatus = async (req, res) => {
@@ -185,7 +218,6 @@ const getConversionStatus = async (req, res) => {
     if (!conversion) {
       return res.status(404).json({ message: 'Conversión no encontrada' });
     }
-
     res.json(conversion);
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener estado de la conversión' });

@@ -1,40 +1,31 @@
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 
-const cleanupUploads = () => {
-  const uploadsDir = path.join(__dirname, '..', 'uploads');
-  const now = Date.now();
-  const oneHourAgo = now - (60 * 60 * 1000); // 1 hora en milisegundos
+const cleanupUploads = async () => {
+  try {
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000); // 1 hora
 
-  fs.readdir(uploadsDir, (err, files) => {
-    if (err) {
-      console.error('Error al leer directorio de uploads:', err);
-      return;
-    }
+    const files = await fs.readdir(uploadsDir);
 
-    files.forEach(file => {
+    for (const file of files) {
       const filePath = path.join(uploadsDir, file);
-      fs.stat(filePath, (err, stats) => {
-        if (err) {
-          console.error(`Error al obtener stats de ${file}:`, err);
-          return;
-        }
-
-        // Eliminar archivos más antiguos de 1 hora
+      try {
+        const stats = await fs.stat(filePath);
         if (stats.mtimeMs < oneHourAgo) {
-          fs.unlink(filePath, err => {
-            if (err) {
-              console.error(`Error al eliminar ${file}:`, err);
-              return;
-            }
-            console.log(`Archivo temporal eliminado: ${file}`);
-          });
+          await fs.unlink(filePath);
+          console.log(`Archivo temporal eliminado: ${file}`);
         }
-      });
-    });
-  });
+      } catch (err) {
+        console.error(`Error procesando ${file}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Error al limpiar uploads:', err.message);
+  }
 };
 
 module.exports = {
   cleanupUploads
-}; 
+};

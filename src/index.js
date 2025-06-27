@@ -68,7 +68,14 @@ mongoose.connect(process.env.DB, {
   .catch(err => console.error('Error al conectar a MongoDB:', err));
 
 // Configurar limpieza periódica de archivos temporales (cada hora)
-setInterval(cleanupUploads, 60 * 60 * 1000);
+cleanupUploads();
+setInterval(() => {
+  try {
+    cleanupUploads();
+  } catch (err) {
+    console.error('Error al ejecutar cleanupUploads:', err);
+  }
+}, 60 * 60 * 1000); 
 
 // WebSocket events
 io.on('connection', (socket) => {

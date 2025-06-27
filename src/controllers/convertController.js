@@ -161,6 +161,8 @@ const processFile = async (
         );
         if (arrayProps.length > 0) {
           data = data[arrayProps[0]];
+        } else{
+          data = [data];
         }
       }
       break;

@@ -58,12 +58,10 @@ const convertFile = async (req, res) => {
         try {
           columns = JSON.parse(columns);
         } catch (err) {
-          return res
-            .status(400)
-            .json({
-              message:
-                "El parámetro columns debe ser un array válido en formato JSON",
-            });
+          return res.status(400).json({
+            message:
+              "El parámetro columns debe ser un array válido en formato JSON",
+          });
         }
       } else if (!Array.isArray(columns)) {
         return res
@@ -161,7 +159,7 @@ const processFile = async (
         );
         if (arrayProps.length > 0) {
           data = data[arrayProps[0]];
-        } else{
+        } else {
           data = [data];
         }
       }
@@ -315,9 +313,44 @@ const downloadConvertedFile = async (req, res) => {
   }
 };
 
+const getConversionHistory = async (req, res) => {
+  try {
+    const token = req.headers.authorization;
+    if (!token) {
+      return res.status(401).json({ message: "No se proporcionó el token" });
+    }
+
+    const tokenLimpio = token.startsWith("Bearer ") ? token.slice(7) : token;
+    const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
+    const userId = decodedToken._id;
+
+    const history = await Conversion.find({ user: userId })
+  .sort({ createdAt: -1 })
+  .limit(50)
+  .populate({
+    path: 'user',
+    select: 'name lastName _functions',
+    populate: {
+      path: '_functions',
+      select: 'name' // Esto trae el nombre del rol
+    }
+  });
+
+    if (!history || history.length === 0) { 
+      return res.status(404).json({ message: "No hay conversiones aun" });
+    }
+
+    res.json(history);
+  } catch (error) {
+    console.error("Error al obtener historial:", error);
+    res.status(500).json({ message: "Error al obtener historial" });
+  }
+};
+
 module.exports = {
   convertFile,
   getConversionStatus,
   downloadConvertedFile,
+  getConversionHistory,
   setIO,
 };

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const { convertFile, getConversionStatus, downloadConvertedFile } = require('../controllers/convertController');
+const { convertFile, getConversionStatus, downloadConvertedFile, getConversionHistory} = require('../controllers/convertController');
 
 // Configuración de multer para subida de archivos
 const storage = multer.diskStorage({
@@ -35,5 +35,6 @@ const upload = multer({
 router.post('/', upload.single('file'), convertFile);
 router.get('/status/:id', getConversionStatus);
 router.get('/download/:id', downloadConvertedFile);
+router.get('/history', getConversionHistory);
 
 module.exports = router;

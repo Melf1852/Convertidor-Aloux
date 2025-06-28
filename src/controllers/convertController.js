@@ -347,10 +347,46 @@ const getConversionHistory = async (req, res) => {
   }
 };
 
+const deleteSelectedConversions = async (req, res) => {
+  try {
+    const token = req.headers.authorization;
+    if (!token) {
+      return res.status(401).json({ message: "No se proporcionó el token" });
+    }
+    const tokenLimpio = token.startsWith("Bearer ") ? token.slice(7) : token;
+    const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
+    const userId = decodedToken._id;
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "Debes proporcionar un array de IDs a eliminar" });
+    }
+
+    // Solo elimina las conversiones que pertenezcan al usuario
+    const result = await Conversion.deleteMany({
+      _id: { $in: ids },
+      user: userId
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "No se encontraron conversiones para eliminar" });
+    }
+
+    res.json({
+      message: `Se eliminaron ${result.deletedCount} conversiones`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error("Error al eliminar conversiones seleccionadas:", error);
+    res.status(500).json({ message: "Error al eliminar conversiones seleccionadas" });
+  }
+};
+
 module.exports = {
   convertFile,
   getConversionStatus,
   downloadConvertedFile,
   getConversionHistory,
+  deleteSelectedConversions,
   setIO,
 };

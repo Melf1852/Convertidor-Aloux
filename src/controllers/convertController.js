@@ -73,9 +73,18 @@ const convertFile = async (req, res) => {
     const originalFileName = req.file.filename;
     const filePath = req.file.path;
     const outputExtension = getOutputExtension(targetFormat);
-    const convertedFileName = `converted_${
-      path.parse(originalFileName).name
-    }${outputExtension}`;
+
+    // Lee el nombre personalizado del body
+    let customName = req.body.fileName;
+    if (customName) {
+      // Elimina extensión si el usuario la puso
+      customName = path.parse(customName).name;
+      // Usa el nombre personalizado + la extensión de salida
+      convertedFileName = `${customName}${outputExtension}`;
+    } else {
+      // Si no hay nombre personalizado, usa el nombre original
+      convertedFileName = `${path.parse(req.file.originalname).name}${outputExtension}`;
+    }
 
     const conversion = new Conversion({
       user: userId,

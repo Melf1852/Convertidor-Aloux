@@ -8,6 +8,7 @@ const yaml = require("js-yaml");
 const xml2js = require("xml2js");
 const Conversion = require("../models/conversionModel");
 const jwt = require("jsonwebtoken");
+const { sanitizeXmlKeys } = require("../utils/xmlSanitizer");
 
 let io;
 const setIO = (socketIO) => {
@@ -51,6 +52,14 @@ const convertFile = async (req, res) => {
     const userId = decodedToken._id;
 
     let { sourceFormat, targetFormat, columns } = req.body; //columnas del archivo
+    let headersMap = req.body.headersMap || null;
+    if (typeof headersMap === 'string') {
+      try {
+        headersMap = JSON.parse(headersMap);
+      } catch (e) {
+        return res.status(400).json({ message: 'headersMap debe ser un JSON válido' });
+      }
+    }
 
     //Verifica que columns sea un arreglo
     if (columns) {
@@ -103,7 +112,8 @@ const convertFile = async (req, res) => {
         sourceFormat,
         targetFormat,
         conversion,
-        columns
+        columns,
+        headersMap
       );
 
       await Conversion.findByIdAndUpdate(conversion._id, {
@@ -153,7 +163,8 @@ const processFile = async (
   sourceFormat,
   targetFormat,
   conversion,
-  columns
+  columns,
+  headersMap
 ) => {
   let data;
 
@@ -187,7 +198,18 @@ const processFile = async (
 
     case "xlsx":
       const workbook = xlsx.readFile(filePath);
-      data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      let sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      // Si hay un mapeo de headers, renombrar las claves
+      if (headersMap && typeof headersMap === 'object') {
+        sheetData = sheetData.map(row => {
+          const newRow = {};
+          for (const key in row) {
+            newRow[headersMap[key] || key] = row[key];
+          }
+          return newRow;
+        });
+      }
+      data = sheetData;
       break;
 
     case "yaml":
@@ -217,7 +239,7 @@ const processFile = async (
         } else {
           data = [data]; // Asegurarse de devolver un array
         }
-      }
+      }      
       break;
 
     default:
@@ -268,10 +290,11 @@ const processFile = async (
       break;
 
     case "xml":
+      const sanitizedData = sanitizeXmlKeys(data);
       const builder = new xml2js.Builder();
       const rootName = "root";
       const wrappedData = {};
-      wrappedData[rootName] = { record: data };
+      wrappedData[rootName] = { record: sanitizedData };
       const xml = builder.buildObject(wrappedData);
       await fsPromises.writeFile(outputPath, xml);
       break;
@@ -358,44 +381,65 @@ const getConversionHistory = async (req, res) => {
 
 const deleteSelectedConversions = async (req, res) => {
   try {
-    const token = req.headers.authorization;
-    if (!token) {
-      return res.status(401).json({ message: "No se proporcionó el token" });
-    }
-    const tokenLimpio = token.startsWith("Bearer ") ? token.slice(7) : token;
-    const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
-    const userId = decodedToken._id;
-
     const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ message: "Debes proporcionar un array de IDs a eliminar" });
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No se proporcionaron IDs válidos' });
     }
 
-    // Solo elimina las conversiones que pertenezcan al usuario
-    const result = await Conversion.deleteMany({
-      _id: { $in: ids },
-      user: userId
-    });
+    const conversions = await Conversion.find({ _id: { $in: ids } });
 
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ message: "No se encontraron conversiones para eliminar" });
+    // Eliminar archivos físicos
+    for (const conv of conversions) {
+      const filePath = path.join(__dirname, '..', 'uploads', conv.convertedFileName);
+      if (fs.existsSync(filePath)) {
+        await fsPromises.unlink(filePath);
+      }
     }
 
-    res.json({
-      message: `Se eliminaron ${result.deletedCount} conversiones`,
+    const result = await Conversion.deleteMany({ _id: { $in: ids } });
+
+    return res.status(200).json({
+      message: 'Procesos eliminados correctamente',
       deletedCount: result.deletedCount
     });
   } catch (error) {
-    console.error("Error al eliminar conversiones seleccionadas:", error);
-    res.status(500).json({ message: "Error al eliminar conversiones seleccionadas" });
+    console.error('Error al eliminar procesos seleccionados:', error);
+    return res.status(500).json({ message: 'Error al eliminar procesos seleccionados' });
   }
 };
 
+const deleteAllConversions = async (req, res) => {
+  try {
+    const conversions = await Conversion.find({});
+
+    // Eliminar archivos físicos
+    for (const conv of conversions) {
+      const filePath = path.join(__dirname, '..', 'uploads', conv.convertedFileName);
+      if (fs.existsSync(filePath)) {
+        await fsPromises.unlink(filePath);
+      }
+    }
+
+    const result = await Conversion.deleteMany({});
+
+    return res.status(200).json({
+      message: 'Todos los procesos han sido eliminados',
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Error al eliminar todos los procesos:', error);
+    return res.status(500).json({ message: 'Error al eliminar todos los procesos' });
+  }
+};
+
+// 👇 Aquí el module.exports COMPLETO, incluyendo todas las funciones usadas en convertRoutes
 module.exports = {
   convertFile,
   getConversionStatus,
   downloadConvertedFile,
   getConversionHistory,
   deleteSelectedConversions,
+  deleteAllConversions,
   setIO,
 };

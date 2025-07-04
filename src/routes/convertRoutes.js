@@ -1,41 +1,49 @@
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const { convertFile, getConversionStatus, downloadConvertedFile, getConversionHistory, deleteSelectedConversions} = require('../controllers/convertController');
+  const express = require('express');
+  const router = express.Router();
+  const multer = require('multer');
+  const path = require('path');
 
-// Configuración de multer para subida de archivos
-const storage = multer.diskStorage({
-  
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, '..', 'uploads'));
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
-  }
-});
+  const {
+    convertFile,
+    getConversionStatus,
+    downloadConvertedFile,
+    getConversionHistory,
+    deleteSelectedConversions,
+    deleteAllConversions
+  } = require('../controllers/convertController');
 
-const upload = multer({
-  storage: storage,
-  fileFilter: (req, file, cb) => {
-    const allowedFormats = ['.json', '.csv', '.xlsx', '.xml', '.yml', '.yaml'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedFormats.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Formato de archivo no soportado'));
+  // Configuración de multer para subida de archivos
+  const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, path.join(__dirname, '..', 'uploads'));
+    },
+    filename: function (req, file, cb) {
+      cb(null, Date.now() + '-' + file.originalname);
     }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  }
-});
+  });
 
-// Rutas protegidas
-router.post('/', upload.single('file'), convertFile);
-router.get('/status/:id', getConversionStatus);
-router.get('/download/:id', downloadConvertedFile);
-router.get('/history', getConversionHistory);
-router.delete('/history/selected', deleteSelectedConversions);
+  const upload = multer({
+    storage: storage,
+    fileFilter: (req, file, cb) => {
+      const allowedFormats = ['.json', '.csv', '.xlsx', '.xml', '.yml', '.yaml'];
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (allowedFormats.includes(ext)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Formato de archivo no soportado'));
+      }
+    },
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB
+    }
+  });
 
-module.exports = router;
+  // Rutas
+  router.post('/', upload.single('file'), convertFile);
+  router.get('/status/:id', getConversionStatus);
+  router.get('/download/:id', downloadConvertedFile);
+  router.get('/history', getConversionHistory);
+  router.delete('/history/selected', deleteSelectedConversions); // ✅ eliminar por IDs
+  router.delete('/history/delete', deleteAllConversions);        // ✅ eliminar todos
+
+  module.exports = router;

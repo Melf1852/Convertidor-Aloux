@@ -9,6 +9,9 @@ const xml2js = require("xml2js");
 const Conversion = require("../models/conversionModel");
 const jwt = require("jsonwebtoken");
 const { sanitizeXmlKeys } = require("../utils/xmlSanitizer");
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const mime = require('mime-types');
+const iconv = require('iconv-lite');
 
 let io;
 const setIO = (socketIO) => {
@@ -79,12 +82,12 @@ const convertFile = async (req, res) => {
       }
     }
 
-    const originalFileName = req.file.filename;
-    const filePath = req.file.path;
+    const originalFileName = req.file.originalname;
     const outputExtension = getOutputExtension(targetFormat);
 
     // Lee el nombre personalizado del body
     let customName = req.body.fileName;
+    let convertedFileName;
     if (customName) {
       // Elimina extensión si el usuario la puso
       customName = path.parse(customName).name;
@@ -107,8 +110,9 @@ const convertFile = async (req, res) => {
     await conversion.save();
 
     try {
-      await processFile(
-        filePath,
+      // Procesar archivo desde buffer en memoria
+      const evidence = await processFileFromBuffer(
+        req.file.buffer,
         sourceFormat,
         targetFormat,
         conversion,
@@ -125,6 +129,7 @@ const convertFile = async (req, res) => {
         io.emit(`conversion_${conversion._id}`, {
           status: "completed",
           conversionId: conversion._id,
+          evidence: evidence,
         });
       }
 
@@ -132,6 +137,7 @@ const convertFile = async (req, res) => {
         message: "Conversión completada",
         conversionId: conversion._id,
         status: "completed",
+        evidence: evidence,
       });
     } catch (error) {
       await Conversion.findByIdAndUpdate(conversion._id, {
@@ -158,8 +164,9 @@ const convertFile = async (req, res) => {
   }
 };
 
-const processFile = async (
-  filePath,
+// Nueva función para procesar desde buffer en memoria y subir a S3
+const processFileFromBuffer = async (
+  fileBuffer,
   sourceFormat,
   targetFormat,
   conversion,
@@ -167,12 +174,19 @@ const processFile = async (
   headersMap
 ) => {
   let data;
+  const bufferToString = (buf) => {
+    try {
+      return buf.toString('utf-8');
+    } catch (e) {
+      // Si falla, intenta Latin1
+      return iconv.decode(buf, 'latin1');
+    }
+  };
 
-  // Leer archivo según formato de origen
+  // Leer archivo según formato de origen desde buffer
   switch (sourceFormat) {
     case "json":
-      const jsonContent = await fsPromises.readFile(filePath, "utf-8");
-      data = JSON.parse(jsonContent);
+      data = JSON.parse(bufferToString(fileBuffer));
       if (typeof data === "object" && !Array.isArray(data)) {
         const arrayProps = Object.keys(data).filter((key) =>
           Array.isArray(data[key])
@@ -184,22 +198,28 @@ const processFile = async (
         }
       }
       break;
-
     case "csv":
+      let csvString;
+      try {
+        csvString = buf.toString('utf-8');
+      } catch (e) {
+        csvString = iconv.decode(fileBuffer, 'latin1');
+      }
       data = await new Promise((resolve, reject) => {
         const results = [];
-        fs.createReadStream(filePath)
+        const stream = require('stream');
+        const bufferStream = new stream.PassThrough();
+        bufferStream.end(Buffer.from(csvString, 'utf-8'));
+        bufferStream
           .pipe(parse({ columns: true }))
           .on("data", (row) => results.push(row))
           .on("end", () => resolve(results))
           .on("error", reject);
       });
       break;
-
     case "xlsx":
-      const workbook = xlsx.readFile(filePath);
+      const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
       let sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-      // Si hay un mapeo de headers, renombrar las claves
       if (headersMap && typeof headersMap === 'object') {
         sheetData = sheetData.map(row => {
           const newRow = {};
@@ -211,10 +231,8 @@ const processFile = async (
       }
       data = sheetData;
       break;
-
     case "yaml":
-      const yamlContent = await fsPromises.readFile(filePath, "utf-8");
-      data = yaml.load(yamlContent);
+      data = yaml.load(bufferToString(fileBuffer));
       if (typeof data === "object" && !Array.isArray(data)) {
         const arrayProps = Object.keys(data).filter((key) =>
           Array.isArray(data[key])
@@ -224,10 +242,8 @@ const processFile = async (
         }
       }
       break;
-
     case "xml":
-      const xmlContent = await fsPromises.readFile(filePath, "utf-8");
-      data = await xml2js.parseStringPromise(xmlContent);
+      data = await xml2js.parseStringPromise(bufferToString(fileBuffer));
       if (typeof data === "object") {
         const rootKey = Object.keys(data)[0];
         data = data[rootKey];
@@ -237,11 +253,10 @@ const processFile = async (
         if (arrayProps.length > 0) {
           data = data[arrayProps[0]];
         } else {
-          data = [data]; // Asegurarse de devolver un array
+          data = [data];
         }
-      }      
+      }
       break;
-
     default:
       throw new Error("Formato de origen no soportado");
   }
@@ -254,41 +269,34 @@ const processFile = async (
     });
   }
 
-  // Convertir y guardar según formato de destino
-  const outputPath = path.join(
-    path.dirname(filePath),
-    conversion.convertedFileName
-  );
-
+  // Convertir a formato de destino y subir a S3
+  let outputBuffer;
+  let extension = getOutputExtension(targetFormat);
   switch (targetFormat) {
     case "json":
-      await fsPromises.writeFile(outputPath, JSON.stringify(data, null, 2));
+      outputBuffer = Buffer.from(JSON.stringify(data, null, 2), 'utf-8');
       break;
-
     case "csv":
-      await new Promise((resolve, reject) => {
-        const writeStream = fs.createWriteStream(outputPath);
+      outputBuffer = await new Promise((resolve, reject) => {
         stringify(data, {
           header: true,
           columns: data.length > 0 ? Object.keys(data[0]) : [],
-        })
-          .pipe(writeStream)
-          .on("finish", resolve)
-          .on("error", reject);
+        }, (err, output) => {
+          if (err) return reject(err);
+          resolve(Buffer.from(output, 'utf-8'));
+        });
       });
       break;
-
     case "xlsx":
       const newWorkbook = xlsx.utils.book_new();
       const newSheet = xlsx.utils.json_to_sheet(data);
       xlsx.utils.book_append_sheet(newWorkbook, newSheet, "Sheet1");
-      xlsx.writeFile(newWorkbook, outputPath);
+      const tmp = xlsx.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' });
+      outputBuffer = Buffer.isBuffer(tmp) ? tmp : Buffer.from(tmp);
       break;
-
     case "yaml":
-      await fsPromises.writeFile(outputPath, yaml.dump(data));
+      outputBuffer = Buffer.from(yaml.dump(data), 'utf-8');
       break;
-
     case "xml":
       const sanitizedData = sanitizeXmlKeys(data);
       const builder = new xml2js.Builder();
@@ -296,14 +304,31 @@ const processFile = async (
       const wrappedData = {};
       wrappedData[rootName] = { record: sanitizedData };
       const xml = builder.buildObject(wrappedData);
-      await fsPromises.writeFile(outputPath, xml);
+      outputBuffer = Buffer.from(xml, 'utf-8');
       break;
-
     default:
       throw new Error("Formato de destino no soportado");
   }
 
-  return outputPath;
+  // Subir a S3 y retornar la URL
+  const s3Client = new S3Client({ region: process.env.AWS_REGION });
+  const contentType = mime.lookup(extension) || 'application/octet-stream';
+  const pathFile = path.parse(conversion.convertedFileName).name;
+  const params = {
+    Bucket: process.env.AWS_BUCKET,
+    Key: pathFile + extension,
+    ContentType: contentType,
+    Body: outputBuffer,
+    ACL: 'public-read',
+  };
+  const command = new PutObjectCommand(params);
+  try {
+    await s3Client.send(command);
+    const evidence = `https://${process.env.AWS_BUCKET}.s3.amazonaws.com/${pathFile}${extension}`;
+    return evidence;
+  } catch (error) {
+    throw new Error('Error al subir a S3: ' + error.message);
+  }
 };
 
 const getConversionStatus = async (req, res) => {
@@ -317,31 +342,6 @@ const getConversionStatus = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error al obtener estado de la conversión" });
-  }
-};
-
-const downloadConvertedFile = async (req, res) => {
-  try {
-    const conversion = await Conversion.findById(req.params.id);
-    if (!conversion) {
-      return res.status(404).json({ message: "Conversión no encontrada" });
-    }
-
-    if (conversion.status !== "completed") {
-      return res
-        .status(400)
-        .json({ message: "La conversión aún no está completa" });
-    }
-
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "uploads",
-      conversion.convertedFileName
-    );
-    res.download(filePath);
-  } catch (error) {
-    res.status(500).json({ message: "Error al descargar el archivo" });
   }
 };
 
@@ -387,16 +387,6 @@ const deleteSelectedConversions = async (req, res) => {
       return res.status(400).json({ message: 'No se proporcionaron IDs válidos' });
     }
 
-    const conversions = await Conversion.find({ _id: { $in: ids } });
-
-    // Eliminar archivos físicos
-    for (const conv of conversions) {
-      const filePath = path.join(__dirname, '..', 'uploads', conv.convertedFileName);
-      if (fs.existsSync(filePath)) {
-        await fsPromises.unlink(filePath);
-      }
-    }
-
     const result = await Conversion.deleteMany({ _id: { $in: ids } });
 
     return res.status(200).json({
@@ -411,16 +401,6 @@ const deleteSelectedConversions = async (req, res) => {
 
 const deleteAllConversions = async (req, res) => {
   try {
-    const conversions = await Conversion.find({});
-
-    // Eliminar archivos físicos
-    for (const conv of conversions) {
-      const filePath = path.join(__dirname, '..', 'uploads', conv.convertedFileName);
-      if (fs.existsSync(filePath)) {
-        await fsPromises.unlink(filePath);
-      }
-    }
-
     const result = await Conversion.deleteMany({});
 
     return res.status(200).json({
@@ -437,7 +417,6 @@ const deleteAllConversions = async (req, res) => {
 module.exports = {
   convertFile,
   getConversionStatus,
-  downloadConvertedFile,
   getConversionHistory,
   deleteSelectedConversions,
   deleteAllConversions,

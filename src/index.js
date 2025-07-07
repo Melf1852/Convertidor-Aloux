@@ -8,7 +8,6 @@ const swaggerUI = require('swagger-ui-express');
 const YAML = require('yamljs');
 const path = require('path');
 const { IAMRouter, IAMSwagger, IAMAuth } = require('aloux-iam');
-const { cleanupUploads } = require('./utils/cleanup');
 const methodOverride = require("method-override");
 const convertRoutes = require('./routes/convertRoutes');
 const historyRoutes = require('./routes/historyRoutes');
@@ -66,16 +65,6 @@ mongoose.connect(process.env.DB, {
 })
   .then(() => console.log('Conectado a MongoDB'))
   .catch(err => console.error('Error al conectar a MongoDB:', err));
-
-// Configurar limpieza periódica de archivos temporales (cada hora)
-cleanupUploads();
-setInterval(() => {
-  try {
-    cleanupUploads();
-  } catch (err) {
-    console.error('Error al ejecutar cleanupUploads:', err);
-  }
-}, 60 * 60 * 1000); 
 
 // WebSocket events
 io.on('connection', (socket) => {

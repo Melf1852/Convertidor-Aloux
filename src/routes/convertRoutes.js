@@ -6,21 +6,13 @@
   const {
     convertFile,
     getConversionStatus,
-    downloadConvertedFile,
     getConversionHistory,
     deleteSelectedConversions,
     deleteAllConversions
   } = require('../controllers/convertController');
 
-  // Configuración de multer para subida de archivos
-  const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, path.join(__dirname, '..', 'uploads'));
-    },
-    filename: function (req, file, cb) {
-      cb(null, Date.now() + '-' + file.originalname);
-    }
-  });
+  // Configuración de multer para subida de archivos en memoria
+  const storage = multer.memoryStorage();
 
   const upload = multer({
     storage: storage,
@@ -41,7 +33,6 @@
   // Rutas
   router.post('/', upload.single('file'), convertFile);
   router.get('/status/:id', getConversionStatus);
-  router.get('/download/:id', downloadConvertedFile);
   router.get('/history', getConversionHistory);
   router.delete('/history/selected', deleteSelectedConversions); // ✅ eliminar por IDs
   router.delete('/history/delete', deleteAllConversions);        // ✅ eliminar todos

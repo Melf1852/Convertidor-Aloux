@@ -32,6 +32,10 @@ const conversionSchema = new mongoose.Schema({
   error: {
     type: String
   },
+  fileUrl: {
+    type: String,
+    required: false // La URL se genera después del procesamiento
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -41,4 +45,4 @@ const conversionSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Conversion', conversionSchema); 
+module.exports = mongoose.model('Conversion', conversionSchema);

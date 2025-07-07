@@ -123,6 +123,7 @@ const convertFile = async (req, res) => {
       await Conversion.findByIdAndUpdate(conversion._id, {
         status: "completed",
         completedAt: new Date(),
+        fileUrl: evidence
       });
 
       if (io) {

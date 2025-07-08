@@ -7,6 +7,7 @@
     convertFile,
     getConversionStatus,
     getConversionHistory,
+    downloadConvertedFile,
     deleteSelectedConversions,
     deleteAllConversions
   } = require('../controllers/convertController');
@@ -34,6 +35,7 @@
   router.post('/', upload.single('file'), convertFile);
   router.get('/status/:id', getConversionStatus);
   router.get('/history', getConversionHistory);
+    router.get('/download/:id', downloadConvertedFile);
   router.delete('/history/selected', deleteSelectedConversions); // ✅ eliminar por IDs
   router.delete('/history/delete', deleteAllConversions);        // ✅ eliminar todos
 

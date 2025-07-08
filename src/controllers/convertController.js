@@ -9,7 +9,7 @@ const xml2js = require("xml2js");
 const Conversion = require("../models/conversionModel");
 const jwt = require("jsonwebtoken");
 const { sanitizeXmlKeys } = require("../utils/xmlSanitizer");
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const mime = require('mime-types');
 const iconv = require('iconv-lite');
 
@@ -17,6 +17,9 @@ let io;
 const setIO = (socketIO) => {
   io = socketIO;
 };
+
+// Configurar cliente S3
+const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 const getOutputExtension = (format) => {
   switch (format.toLowerCase()) {
@@ -54,7 +57,7 @@ const convertFile = async (req, res) => {
     const decodedToken = jwt.verify(tokenLimpio, process.env.AUTH_SECRET);
     const userId = decodedToken._id;
 
-    let { sourceFormat, targetFormat, columns } = req.body; //columnas del archivo
+    let { sourceFormat, targetFormat, columns } = req.body;
     let headersMap = req.body.headersMap || null;
     if (typeof headersMap === 'string') {
       try {
@@ -64,15 +67,13 @@ const convertFile = async (req, res) => {
       }
     }
 
-    //Verifica que columns sea un arreglo
     if (columns) {
       if (typeof columns === "string") {
         try {
           columns = JSON.parse(columns);
         } catch (err) {
           return res.status(400).json({
-            message:
-              "El parámetro columns debe ser un array válido en formato JSON",
+            message: "El parámetro columns debe ser un array válido en formato JSON",
           });
         }
       } else if (!Array.isArray(columns)) {
@@ -85,16 +86,12 @@ const convertFile = async (req, res) => {
     const originalFileName = req.file.originalname;
     const outputExtension = getOutputExtension(targetFormat);
 
-    // Lee el nombre personalizado del body
     let customName = req.body.fileName;
     let convertedFileName;
     if (customName) {
-      // Elimina extensión si el usuario la puso
       customName = path.parse(customName).name;
-      // Usa el nombre personalizado + la extensión de salida
       convertedFileName = `${customName}${outputExtension}`;
     } else {
-      // Si no hay nombre personalizado, usa el nombre original
       convertedFileName = `${path.parse(req.file.originalname).name}${outputExtension}`;
     }
 
@@ -110,7 +107,6 @@ const convertFile = async (req, res) => {
     await conversion.save();
 
     try {
-      // Procesar archivo desde buffer en memoria
       const evidence = await processFileFromBuffer(
         req.file.buffer,
         sourceFormat,
@@ -123,7 +119,6 @@ const convertFile = async (req, res) => {
       await Conversion.findByIdAndUpdate(conversion._id, {
         status: "completed",
         completedAt: new Date(),
-        fileUrl: evidence
       });
 
       if (io) {
@@ -165,7 +160,6 @@ const convertFile = async (req, res) => {
   }
 };
 
-// Nueva función para procesar desde buffer en memoria y subir a S3
 const processFileFromBuffer = async (
   fileBuffer,
   sourceFormat,
@@ -179,7 +173,6 @@ const processFileFromBuffer = async (
     try {
       return buf.toString('utf-8');
     } catch (e) {
-      // Si falla, intenta Latin1
       return iconv.decode(buf, 'latin1');
     }
   };
@@ -202,7 +195,7 @@ const processFileFromBuffer = async (
     case "csv":
       let csvString;
       try {
-        csvString = buf.toString('utf-8');
+        csvString = fileBuffer.toString('utf-8');
       } catch (e) {
         csvString = iconv.decode(fileBuffer, 'latin1');
       }
@@ -312,7 +305,6 @@ const processFileFromBuffer = async (
   }
 
   // Subir a S3 y retornar la URL
-  const s3Client = new S3Client({ region: process.env.AWS_REGION });
   const contentType = mime.lookup(extension) || 'application/octet-stream';
   const pathFile = path.parse(conversion.convertedFileName).name;
   const params = {
@@ -346,6 +338,146 @@ const getConversionStatus = async (req, res) => {
   }
 };
 
+// Nueva función para descargar archivos desde S3
+const downloadConvertedFile = async (req, res) => {
+  try {
+    const conversion = await Conversion.findById(req.params.id);
+    if (!conversion) {
+      return res.status(404).json({ message: "Conversión no encontrada" });
+    }
+
+    if (conversion.status !== "completed") {
+      return res
+        .status(400)
+        .json({ message: "La conversión aún no está completa" });
+    }
+
+    const bucketName = process.env.AWS_BUCKET;
+    const pathFile = path.parse(conversion.convertedFileName).name;
+    const extension = getOutputExtension(conversion.targetFormat);
+    const fileName = pathFile + extension;
+
+    // Parámetros para S3
+    const params = {
+      Bucket: bucketName,
+      Key: fileName
+    };
+
+    try {
+      // Verificar si el archivo existe en S3
+      const headCommand = new HeadObjectCommand(params);
+      const headResult = await s3Client.send(headCommand);
+      
+      // Obtener el objeto de S3
+      const getCommand = new GetObjectCommand(params);
+      const s3Object = await s3Client.send(getCommand);
+      
+      // Configurar headers para la descarga
+      res.set({
+        'Content-Type': headResult.ContentType || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${conversion.convertedFileName}"`,
+        'Content-Length': headResult.ContentLength
+      });
+      
+      // Convertir el stream a buffer y enviar
+      const chunks = [];
+      for await (const chunk of s3Object.Body) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+      
+      res.send(buffer);
+      
+    } catch (s3Error) {
+      console.error('Error al acceder a S3:', s3Error);
+      
+      if (s3Error.name === 'NoSuchKey' || s3Error.name === 'NotFound') {
+        return res.status(404).json({ message: "Archivo no encontrado en S3" });
+      }
+      
+      return res.status(500).json({ 
+        message: "Error al descargar el archivo desde S3",
+        error: s3Error.message 
+      });
+    }
+    
+  } catch (error) {
+    console.error("Error en downloadConvertedFile:", error);
+    res.status(500).json({ message: "Error al descargar el archivo" });
+  }
+};
+
+// Versión alternativa usando streams para archivos grandes
+const downloadConvertedFileStream = async (req, res) => {
+  try {
+    const conversion = await Conversion.findById(req.params.id);
+    if (!conversion) {
+      return res.status(404).json({ message: "Conversión no encontrada" });
+    }
+
+    if (conversion.status !== "completed") {
+      return res
+        .status(400)
+        .json({ message: "La conversión aún no está completa" });
+    }
+
+    const bucketName = process.env.AWS_BUCKET;
+    const pathFile = path.parse(conversion.convertedFileName).name;
+    const extension = getOutputExtension(conversion.targetFormat);
+    const fileName = pathFile + extension;
+
+    const params = {
+      Bucket: bucketName,
+      Key: fileName
+    };
+
+    try {
+      // Verificar si el archivo existe
+      const headCommand = new HeadObjectCommand(params);
+      const headResult = await s3Client.send(headCommand);
+      
+      // Configurar headers
+      res.set({
+        'Content-Type': headResult.ContentType || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${conversion.convertedFileName}"`,
+        'Content-Length': headResult.ContentLength
+      });
+      
+      // Crear stream de S3 y pipe al response
+      const getCommand = new GetObjectCommand(params);
+      const s3Object = await s3Client.send(getCommand);
+      
+      s3Object.Body.on('error', (streamError) => {
+        console.error('Error en stream de S3:', streamError);
+        if (!res.headersSent) {
+          res.status(500).json({ 
+            message: "Error al transmitir el archivo",
+            error: streamError.message 
+          });
+        }
+      });
+      
+      s3Object.Body.pipe(res);
+      
+    } catch (s3Error) {
+      console.error('Error al acceder a S3:', s3Error);
+      
+      if (s3Error.name === 'NoSuchKey' || s3Error.name === 'NotFound') {
+        return res.status(404).json({ message: "Archivo no encontrado en S3" });
+      }
+      
+      return res.status(500).json({ 
+        message: "Error al descargar el archivo desde S3",
+        error: s3Error.message 
+      });
+    }
+    
+  } catch (error) {
+    console.error("Error en downloadConvertedFileStream:", error);
+    res.status(500).json({ message: "Error al descargar el archivo" });
+  }
+};
+
 const getConversionHistory = async (req, res) => {
   try {
     const token = req.headers.authorization;
@@ -358,16 +490,16 @@ const getConversionHistory = async (req, res) => {
     const userId = decodedToken._id;
 
     const history = await Conversion.find({ user: userId })
-  .sort({ createdAt: -1 })
-  .limit(50)
-  .populate({
-    path: 'user',
-    select: 'name lastName _functions',
-    populate: {
-      path: '_functions',
-      select: 'name' // Esto trae el nombre del rol
-    }
-  });
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate({
+        path: 'user',
+        select: 'name lastName _functions',
+        populate: {
+          path: '_functions',
+          select: 'name'
+        }
+      });
 
     if (!history || history.length === 0) { 
       return res.status(404).json({ message: "No hay conversiones aun" });
@@ -388,6 +520,29 @@ const deleteSelectedConversions = async (req, res) => {
       return res.status(400).json({ message: 'No se proporcionaron IDs válidos' });
     }
 
+    // Opcional: Eliminar archivos de S3 también
+    const conversions = await Conversion.find({ _id: { $in: ids } });
+    
+    for (const conversion of conversions) {
+      try {
+        const pathFile = path.parse(conversion.convertedFileName).name;
+        const extension = getOutputExtension(conversion.targetFormat);
+        const fileName = pathFile + extension;
+        
+        const deleteParams = {
+          Bucket: process.env.AWS_BUCKET,
+          Key: fileName
+        };
+        
+        const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+        const deleteCommand = new DeleteObjectCommand(deleteParams);
+        await s3Client.send(deleteCommand);
+      } catch (s3Error) {
+        console.warn(`Error al eliminar archivo de S3: ${s3Error.message}`);
+        // Continuar con la eliminación de la base de datos aunque falle S3
+      }
+    }
+
     const result = await Conversion.deleteMany({ _id: { $in: ids } });
 
     return res.status(200).json({
@@ -402,6 +557,29 @@ const deleteSelectedConversions = async (req, res) => {
 
 const deleteAllConversions = async (req, res) => {
   try {
+    // Opcional: Eliminar archivos de S3 también
+    const conversions = await Conversion.find({});
+    
+    for (const conversion of conversions) {
+      try {
+        const pathFile = path.parse(conversion.convertedFileName).name;
+        const extension = getOutputExtension(conversion.targetFormat);
+        const fileName = pathFile + extension;
+        
+        const deleteParams = {
+          Bucket: process.env.AWS_BUCKET,
+          Key: fileName
+        };
+        
+        const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+        const deleteCommand = new DeleteObjectCommand(deleteParams);
+        await s3Client.send(deleteCommand);
+      } catch (s3Error) {
+        console.warn(`Error al eliminar archivo de S3: ${s3Error.message}`);
+        // Continuar con la eliminación de la base de datos aunque falle S3
+      }
+    }
+
     const result = await Conversion.deleteMany({});
 
     return res.status(200).json({
@@ -414,10 +592,10 @@ const deleteAllConversions = async (req, res) => {
   }
 };
 
-// 👇 Aquí el module.exports COMPLETO, incluyendo todas las funciones usadas en convertRoutes
 module.exports = {
   convertFile,
   getConversionStatus,
+  downloadConvertedFile, // Usar downloadConvertedFileStream para archivos grandes
   getConversionHistory,
   deleteSelectedConversions,
   deleteAllConversions,

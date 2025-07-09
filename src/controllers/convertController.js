@@ -9,9 +9,14 @@ const xml2js = require("xml2js");
 const Conversion = require("../models/conversionModel");
 const jwt = require("jsonwebtoken");
 const { sanitizeXmlKeys } = require("../utils/xmlSanitizer");
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
-const mime = require('mime-types');
-const iconv = require('iconv-lite');
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+} = require("@aws-sdk/client-s3");
+const mime = require("mime-types");
+const iconv = require("iconv-lite");
 
 let io;
 const setIO = (socketIO) => {
@@ -59,11 +64,13 @@ const convertFile = async (req, res) => {
 
     let { sourceFormat, targetFormat, columns } = req.body;
     let headersMap = req.body.headersMap || null;
-    if (typeof headersMap === 'string') {
+    if (typeof headersMap === "string") {
       try {
         headersMap = JSON.parse(headersMap);
       } catch (e) {
-        return res.status(400).json({ message: 'headersMap debe ser un JSON válido' });
+        return res
+          .status(400)
+          .json({ message: "headersMap debe ser un JSON válido" });
       }
     }
 
@@ -73,7 +80,8 @@ const convertFile = async (req, res) => {
           columns = JSON.parse(columns);
         } catch (err) {
           return res.status(400).json({
-            message: "El parámetro columns debe ser un array válido en formato JSON",
+            message:
+              "El parámetro columns debe ser un array válido en formato JSON",
           });
         }
       } else if (!Array.isArray(columns)) {
@@ -92,7 +100,9 @@ const convertFile = async (req, res) => {
       customName = path.parse(customName).name;
       convertedFileName = `${customName}${outputExtension}`;
     } else {
-      convertedFileName = `${path.parse(req.file.originalname).name}${outputExtension}`;
+      convertedFileName = `${
+        path.parse(req.file.originalname).name
+      }${outputExtension}`;
     }
 
     const conversion = new Conversion({
@@ -171,9 +181,9 @@ const processFileFromBuffer = async (
   let data;
   const bufferToString = (buf) => {
     try {
-      return buf.toString('utf-8');
+      return buf.toString("utf-8");
     } catch (e) {
-      return iconv.decode(buf, 'latin1');
+      return iconv.decode(buf, "latin1");
     }
   };
 
@@ -195,15 +205,15 @@ const processFileFromBuffer = async (
     case "csv":
       let csvString;
       try {
-        csvString = fileBuffer.toString('utf-8');
+        csvString = fileBuffer.toString("utf-8");
       } catch (e) {
-        csvString = iconv.decode(fileBuffer, 'latin1');
+        csvString = iconv.decode(fileBuffer, "latin1");
       }
       data = await new Promise((resolve, reject) => {
         const results = [];
-        const stream = require('stream');
+        const stream = require("stream");
         const bufferStream = new stream.PassThrough();
-        bufferStream.end(Buffer.from(csvString, 'utf-8'));
+        bufferStream.end(Buffer.from(csvString, "utf-8"));
         bufferStream
           .pipe(parse({ columns: true }))
           .on("data", (row) => results.push(row))
@@ -211,9 +221,9 @@ const processFileFromBuffer = async (
           .on("error", reject);
       });
 
-       // Aplicar headersMap para CSV igual que para XLSX
-       if (headersMap && typeof headersMap === 'object') {
-        data = data.map(row => {
+      // Aplicar headersMap para CSV igual que para XLSX
+      if (headersMap && typeof headersMap === "object") {
+        data = data.map((row) => {
           const newRow = {};
           for (const key in row) {
             newRow[headersMap[key] || key] = row[key];
@@ -224,10 +234,12 @@ const processFileFromBuffer = async (
       break;
 
     case "xlsx":
-      const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-      let sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-      if (headersMap && typeof headersMap === 'object') {
-        sheetData = sheetData.map(row => {
+      const workbook = xlsx.read(fileBuffer, { type: "buffer", cellDates: true });
+      let sheetData = xlsx.utils.sheet_to_json(
+        workbook.Sheets[workbook.SheetNames[0]]
+      );
+      if (headersMap && typeof headersMap === "object") {
+        sheetData = sheetData.map((row) => {
           const newRow = {};
           for (const key in row) {
             newRow[headersMap[key] || key] = row[key];
@@ -280,28 +292,32 @@ const processFileFromBuffer = async (
   let extension = getOutputExtension(targetFormat);
   switch (targetFormat) {
     case "json":
-      outputBuffer = Buffer.from(JSON.stringify(data, null, 2), 'utf-8');
+      outputBuffer = Buffer.from(JSON.stringify(data, null, 2), "utf-8");
       break;
     case "csv":
       outputBuffer = await new Promise((resolve, reject) => {
-        stringify(data, {
-          header: true,
-          columns: data.length > 0 ? Object.keys(data[0]) : [],
-        }, (err, output) => {
-          if (err) return reject(err);
-          resolve(Buffer.from(output, 'utf-8'));
-        });
+        stringify(
+          data,
+          {
+            header: true,
+            columns: data.length > 0 ? Object.keys(data[0]) : [],
+          },
+          (err, output) => {
+            if (err) return reject(err);
+            resolve(Buffer.from(output, "utf-8"));
+          }
+        );
       });
       break;
     case "xlsx":
       const newWorkbook = xlsx.utils.book_new();
       const newSheet = xlsx.utils.json_to_sheet(data);
       xlsx.utils.book_append_sheet(newWorkbook, newSheet, "Sheet1");
-      const tmp = xlsx.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' });
+      const tmp = xlsx.write(newWorkbook, { type: "buffer", bookType: "xlsx" });
       outputBuffer = Buffer.isBuffer(tmp) ? tmp : Buffer.from(tmp);
       break;
     case "yaml":
-      outputBuffer = Buffer.from(yaml.dump(data), 'utf-8');
+      outputBuffer = Buffer.from(yaml.dump(data), "utf-8");
       break;
     case "xml":
       const sanitizedData = sanitizeXmlKeys(data);
@@ -310,21 +326,21 @@ const processFileFromBuffer = async (
       const wrappedData = {};
       wrappedData[rootName] = { record: sanitizedData };
       const xml = builder.buildObject(wrappedData);
-      outputBuffer = Buffer.from(xml, 'utf-8');
+      outputBuffer = Buffer.from(xml, "utf-8");
       break;
     default:
       throw new Error("Formato de destino no soportado");
   }
 
   // Subir a S3 y retornar la URL
-  const contentType = mime.lookup(extension) || 'application/octet-stream';
+  const contentType = mime.lookup(extension) || "application/octet-stream";
   const pathFile = path.parse(conversion.convertedFileName).name;
   const params = {
     Bucket: process.env.AWS_BUCKET,
     Key: pathFile + extension,
     ContentType: contentType,
     Body: outputBuffer,
-    ACL: 'public-read',
+    ACL: "public-read",
   };
   const command = new PutObjectCommand(params);
   try {
@@ -332,7 +348,7 @@ const processFileFromBuffer = async (
     const evidence = `https://${process.env.AWS_BUCKET}.s3.amazonaws.com/${pathFile}${extension}`;
     return evidence;
   } catch (error) {
-    throw new Error('Error al subir a S3: ' + error.message);
+    throw new Error("Error al subir a S3: " + error.message);
   }
 };
 
@@ -372,47 +388,45 @@ const downloadConvertedFile = async (req, res) => {
     // Parámetros para S3
     const params = {
       Bucket: bucketName,
-      Key: fileName
+      Key: fileName,
     };
 
     try {
       // Verificar si el archivo existe en S3
       const headCommand = new HeadObjectCommand(params);
       const headResult = await s3Client.send(headCommand);
-      
+
       // Obtener el objeto de S3
       const getCommand = new GetObjectCommand(params);
       const s3Object = await s3Client.send(getCommand);
-      
+
       // Configurar headers para la descarga
       res.set({
-        'Content-Type': headResult.ContentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${conversion.convertedFileName}"`,
-        'Content-Length': headResult.ContentLength
+        "Content-Type": headResult.ContentType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${conversion.convertedFileName}"`,
+        "Content-Length": headResult.ContentLength,
       });
-      
+
       // Convertir el stream a buffer y enviar
       const chunks = [];
       for await (const chunk of s3Object.Body) {
         chunks.push(chunk);
       }
       const buffer = Buffer.concat(chunks);
-      
+
       res.send(buffer);
-      
     } catch (s3Error) {
-      console.error('Error al acceder a S3:', s3Error);
-      
-      if (s3Error.name === 'NoSuchKey' || s3Error.name === 'NotFound') {
+      console.error("Error al acceder a S3:", s3Error);
+
+      if (s3Error.name === "NoSuchKey" || s3Error.name === "NotFound") {
         return res.status(404).json({ message: "Archivo no encontrado en S3" });
       }
-      
-      return res.status(500).json({ 
+
+      return res.status(500).json({
         message: "Error al descargar el archivo desde S3",
-        error: s3Error.message 
+        error: s3Error.message,
       });
     }
-    
   } catch (error) {
     console.error("Error en downloadConvertedFile:", error);
     res.status(500).json({ message: "Error al descargar el archivo" });
@@ -440,50 +454,48 @@ const downloadConvertedFileStream = async (req, res) => {
 
     const params = {
       Bucket: bucketName,
-      Key: fileName
+      Key: fileName,
     };
 
     try {
       // Verificar si el archivo existe
       const headCommand = new HeadObjectCommand(params);
       const headResult = await s3Client.send(headCommand);
-      
+
       // Configurar headers
       res.set({
-        'Content-Type': headResult.ContentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${conversion.convertedFileName}"`,
-        'Content-Length': headResult.ContentLength
+        "Content-Type": headResult.ContentType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${conversion.convertedFileName}"`,
+        "Content-Length": headResult.ContentLength,
       });
-      
+
       // Crear stream de S3 y pipe al response
       const getCommand = new GetObjectCommand(params);
       const s3Object = await s3Client.send(getCommand);
-      
-      s3Object.Body.on('error', (streamError) => {
-        console.error('Error en stream de S3:', streamError);
+
+      s3Object.Body.on("error", (streamError) => {
+        console.error("Error en stream de S3:", streamError);
         if (!res.headersSent) {
-          res.status(500).json({ 
+          res.status(500).json({
             message: "Error al transmitir el archivo",
-            error: streamError.message 
+            error: streamError.message,
           });
         }
       });
-      
+
       s3Object.Body.pipe(res);
-      
     } catch (s3Error) {
-      console.error('Error al acceder a S3:', s3Error);
-      
-      if (s3Error.name === 'NoSuchKey' || s3Error.name === 'NotFound') {
+      console.error("Error al acceder a S3:", s3Error);
+
+      if (s3Error.name === "NoSuchKey" || s3Error.name === "NotFound") {
         return res.status(404).json({ message: "Archivo no encontrado en S3" });
       }
-      
-      return res.status(500).json({ 
+
+      return res.status(500).json({
         message: "Error al descargar el archivo desde S3",
-        error: s3Error.message 
+        error: s3Error.message,
       });
     }
-    
   } catch (error) {
     console.error("Error en downloadConvertedFileStream:", error);
     res.status(500).json({ message: "Error al descargar el archivo" });
@@ -505,15 +517,15 @@ const getConversionHistory = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(50)
       .populate({
-        path: 'user',
-        select: 'name lastName _functions',
+        path: "user",
+        select: "name lastName _functions",
         populate: {
-          path: '_functions',
-          select: 'name'
-        }
+          path: "_functions",
+          select: "name",
+        },
       });
 
-    if (!history || history.length === 0) { 
+    if (!history || history.length === 0) {
       return res.status(404).json({ message: "No hay conversiones aun" });
     }
 
@@ -529,24 +541,26 @@ const deleteSelectedConversions = async (req, res) => {
     const { ids } = req.body;
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ message: 'No se proporcionaron IDs válidos' });
+      return res
+        .status(400)
+        .json({ message: "No se proporcionaron IDs válidos" });
     }
 
     // Opcional: Eliminar archivos de S3 también
     const conversions = await Conversion.find({ _id: { $in: ids } });
-    
+
     for (const conversion of conversions) {
       try {
         const pathFile = path.parse(conversion.convertedFileName).name;
         const extension = getOutputExtension(conversion.targetFormat);
         const fileName = pathFile + extension;
-        
+
         const deleteParams = {
           Bucket: process.env.AWS_BUCKET,
-          Key: fileName
+          Key: fileName,
         };
-        
-        const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+
+        const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
         const deleteCommand = new DeleteObjectCommand(deleteParams);
         await s3Client.send(deleteCommand);
       } catch (s3Error) {
@@ -558,12 +572,14 @@ const deleteSelectedConversions = async (req, res) => {
     const result = await Conversion.deleteMany({ _id: { $in: ids } });
 
     return res.status(200).json({
-      message: 'Procesos eliminados correctamente',
-      deletedCount: result.deletedCount
+      message: "Procesos eliminados correctamente",
+      deletedCount: result.deletedCount,
     });
   } catch (error) {
-    console.error('Error al eliminar procesos seleccionados:', error);
-    return res.status(500).json({ message: 'Error al eliminar procesos seleccionados' });
+    console.error("Error al eliminar procesos seleccionados:", error);
+    return res
+      .status(500)
+      .json({ message: "Error al eliminar procesos seleccionados" });
   }
 };
 
@@ -571,19 +587,19 @@ const deleteAllConversions = async (req, res) => {
   try {
     // Opcional: Eliminar archivos de S3 también
     const conversions = await Conversion.find({});
-    
+
     for (const conversion of conversions) {
       try {
         const pathFile = path.parse(conversion.convertedFileName).name;
         const extension = getOutputExtension(conversion.targetFormat);
         const fileName = pathFile + extension;
-        
+
         const deleteParams = {
           Bucket: process.env.AWS_BUCKET,
-          Key: fileName
+          Key: fileName,
         };
-        
-        const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+
+        const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
         const deleteCommand = new DeleteObjectCommand(deleteParams);
         await s3Client.send(deleteCommand);
       } catch (s3Error) {
@@ -595,12 +611,14 @@ const deleteAllConversions = async (req, res) => {
     const result = await Conversion.deleteMany({});
 
     return res.status(200).json({
-      message: 'Todos los procesos han sido eliminados',
-      deletedCount: result.deletedCount
+      message: "Todos los procesos han sido eliminados",
+      deletedCount: result.deletedCount,
     });
   } catch (error) {
-    console.error('Error al eliminar todos los procesos:', error);
-    return res.status(500).json({ message: 'Error al eliminar todos los procesos' });
+    console.error("Error al eliminar todos los procesos:", error);
+    return res
+      .status(500)
+      .json({ message: "Error al eliminar todos los procesos" });
   }
 };
 

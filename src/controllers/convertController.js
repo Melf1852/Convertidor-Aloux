@@ -210,7 +210,19 @@ const processFileFromBuffer = async (
           .on("end", () => resolve(results))
           .on("error", reject);
       });
+
+       // Aplicar headersMap para CSV igual que para XLSX
+       if (headersMap && typeof headersMap === 'object') {
+        data = data.map(row => {
+          const newRow = {};
+          for (const key in row) {
+            newRow[headersMap[key] || key] = row[key];
+          }
+          return newRow;
+        });
+      }
       break;
+
     case "xlsx":
       const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
       let sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);

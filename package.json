@@ -1,0 +1,44 @@
+{
+  "name": "back-converter",
+  "version": "0.0.1",
+  "description": "Proyecto Convertidor",
+  "main": "server.js",
+  "scripts": {
+    "start": "env-cmd -f ./.env nodemon server.js"
+  },
+  "author": "Aloux",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "aloux-iam": "^0.0.118",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "~1.19.0",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.0.0",
+    "csv-stringify": "^6.0.0",
+    "express": "~4.17.1",
+    "express-fileupload": "^1.1.6",
+    "helmet": "^8.0.0",
+    "iconv-lite": "^0.6.3",
+    "js-yaml": "^4.1.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.0",
+    "method-override": "^3.0.0",
+    "mime-types": "^2.1.35",
+    "mongodb": "^3.5.11",
+    "mongoose": "^5.13.3",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.0",
+    "swagger-ui-express": "^4.6.2",
+    "xlsx": "^0.18.0",
+    "xml2js": "^0.6.0",
+    "yamljs": "^0.3.0"
+  },
+  "devDependencies": {
+    "env-cmd": "^9.0.3",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": "v22.15.0"
+  }
+} 

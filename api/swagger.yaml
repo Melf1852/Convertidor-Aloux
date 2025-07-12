@@ -1,0 +1,274 @@
+openapi: 3.0.0
+info:
+  title: Aloux File Converter API
+  description: API para el sistema de conversión de archivos de Aloux
+  version: 1.0.0
+servers:
+  - url: http://localhost:2018
+    description: Servidor de desarrollo
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ConversionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+
+    HistoryItem:
+      type: object
+      properties:
+        _id:
+          type: string
+        userId:
+          type: string
+        originalFileName:
+          type: string
+        convertedFileName:
+          type: string
+        conversionType:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+security:
+  - BearerAuth: []
+
+paths:
+  /iam/auth/login:
+    post:
+      summary: Iniciar sesión
+      tags:
+        - Autenticación
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                pwd:
+                  type: string
+                  format: password
+              required:
+                - email
+                - pwd
+      responses:
+        '200':
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Datos inválidos
+        '401':
+          description: Credenciales incorrectas
+        '500':
+          description: Error del servidor
+
+  /iam/auth/signup:
+    post:
+      summary: Registrar nuevo usuario
+      tags:
+        - Autenticación
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                pwd:
+                  type: string
+                  format: password
+                status:
+                  type: string
+                  enum: ["Activo", "Inactivo"]
+                  default: "Activo"
+              required:
+                - name
+                - lastName
+                - email
+                - phone
+                - pwd
+      responses:
+        '201':
+          description: Usuario registrado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _id:
+                    type: string
+                  name:
+                    type: string
+                  lastName:
+                    type: string
+                  email:
+                    type: string
+                  phone:
+                    type: string
+                  status:
+                    type: string
+                  createdAt:
+                    type: number
+                  lastUpdate:
+                    type: number
+                  _functions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        __v:
+                          type: number
+        '400':
+          description: Datos inválidos
+        '409':
+          description: El email ya está registrado
+        '500':
+          description: Error del servidor
+
+  /iam/auth/me:
+    get:
+      summary: Obtener información del usuario actual
+      tags:
+        - Autenticación
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Información del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: No autorizado
+        '500':
+          description: Error del servidor
+
+  /api/convert:
+    post:
+      summary: Convertir archivo
+      tags:
+        - Conversión
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                targetFormat:
+                  type: string
+                  enum: [xlsx, csv]
+      responses:
+        '200':
+          description: Archivo convertido exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionResponse'
+        '400':
+          description: Error en la solicitud
+        '401':
+          description: No autorizado
+        '500':
+          description: Error del servidor
+
+  /api/history:
+    get:
+      summary: Obtener historial de conversiones
+      tags:
+        - Historial
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+          description: Número de página
+        - in: query
+          name: limit
+          schema:
+            type: integer
+          description: Límite de registros por página
+      responses:
+        '200':
+          description: Lista de conversiones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HistoryItem'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+        '401':
+          description: No autorizado
+        '500':
+          description: Error del servidor 

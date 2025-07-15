@@ -26,6 +26,9 @@ const setIO = (socketIO) => {
 // Configurar cliente S3
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
+// Carpeta base para los archivos en S3
+const S3_FOLDER = "conversions/";
+
 const getOutputExtension = (format) => {
   switch (format.toLowerCase()) {
     case "json":
@@ -336,9 +339,10 @@ const processFileFromBuffer = async (
   // Subir a S3 y retornar la URL
   const contentType = mime.lookup(extension) || "application/octet-stream";
   const pathFile = path.parse(conversion.convertedFileName).name;
+  const s3Key = `${S3_FOLDER}${pathFile}${extension}`;
   const params = {
     Bucket: process.env.AWS_BUCKET,
-    Key: pathFile + extension,
+    Key: s3Key,
     ContentType: contentType,
     Body: outputBuffer,
     ACL: "public-read",
@@ -346,7 +350,7 @@ const processFileFromBuffer = async (
   const command = new PutObjectCommand(params);
   try {
     await s3Client.send(command);
-    const evidence = `https://${process.env.AWS_BUCKET}.s3.amazonaws.com/${pathFile}${extension}`;
+    const evidence = `https://${process.env.AWS_BUCKET}.s3.amazonaws.com/${s3Key}`;
     return evidence;
   } catch (error) {
     throw new Error("Error al subir a S3: " + error.message);
@@ -384,12 +388,12 @@ const downloadConvertedFile = async (req, res) => {
     const bucketName = process.env.AWS_BUCKET;
     const pathFile = path.parse(conversion.convertedFileName).name;
     const extension = getOutputExtension(conversion.targetFormat);
-    const fileName = pathFile + extension;
+    const s3Key = `${S3_FOLDER}${pathFile}${extension}`;
 
     // Parámetros para S3
     const params = {
       Bucket: bucketName,
-      Key: fileName,
+      Key: s3Key,
     };
 
     try {
@@ -451,11 +455,11 @@ const downloadConvertedFileStream = async (req, res) => {
     const bucketName = process.env.AWS_BUCKET;
     const pathFile = path.parse(conversion.convertedFileName).name;
     const extension = getOutputExtension(conversion.targetFormat);
-    const fileName = pathFile + extension;
+    const s3Key = `${S3_FOLDER}${pathFile}${extension}`;
 
     const params = {
       Bucket: bucketName,
-      Key: fileName,
+      Key: s3Key,
     };
 
     try {
@@ -554,11 +558,11 @@ const deleteSelectedConversions = async (req, res) => {
       try {
         const pathFile = path.parse(conversion.convertedFileName).name;
         const extension = getOutputExtension(conversion.targetFormat);
-        const fileName = pathFile + extension;
+        const s3Key = `${S3_FOLDER}${pathFile}${extension}`;
 
         const deleteParams = {
           Bucket: process.env.AWS_BUCKET,
-          Key: fileName,
+          Key: s3Key,
         };
 
         const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
@@ -593,11 +597,11 @@ const deleteAllConversions = async (req, res) => {
       try {
         const pathFile = path.parse(conversion.convertedFileName).name;
         const extension = getOutputExtension(conversion.targetFormat);
-        const fileName = pathFile + extension;
+        const s3Key = `${S3_FOLDER}${pathFile}${extension}`;
 
         const deleteParams = {
           Bucket: process.env.AWS_BUCKET,
-          Key: fileName,
+          Key: s3Key,
         };
 
         const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
